@@ -150,6 +150,7 @@ final class MapLibreMapController
   private Map<String, FeatureCollection> addedFeaturesByLayer;
 
   private LatLngBounds bounds = null;
+  private Double boundsMinZoom = null;
   Style.OnStyleLoaded onStyleLoadedCallback =
       new Style.OnStyleLoaded() {
         @Override
@@ -172,6 +173,8 @@ final class MapLibreMapController
           mapLibreMap.addOnMapLongClickListener(MapLibreMapController.this);
 
           methodChannel.invokeMethod("map#onStyleLoaded", null);
+
+          Log.d("X","GUIDEPILOT!! 2");
         }
       };
 
@@ -239,6 +242,7 @@ final class MapLibreMapController
     // Apply camera target bounds if set during initialization
     if (bounds != null) {
       mapLibreMap.setLatLngBoundsForCameraTarget(bounds);
+      applyMinZoomForBounds(bounds);
     }
 
     if (androidGesturesManager != null) {
@@ -892,7 +896,7 @@ final class MapLibreMapController
                   result.success(false);
                 }
               };
-          if (cameraUpdate != null && duration != null) {
+          if (cameraUpdate != null && duration != null && duration > 0) {
             // camera transformation not handled yet
             mapLibreMap.animateCamera(cameraUpdate, duration, onCameraMoveFinishedListener);
           } else if (cameraUpdate != null) {
@@ -2106,6 +2110,35 @@ final class MapLibreMapController
     this.bounds = bounds;
     if (mapLibreMap != null) {
       mapLibreMap.setLatLngBoundsForCameraTarget(bounds);
+      if (bounds != null) {
+        applyMinZoomForBounds(bounds);
+      } else {
+        boundsMinZoom = null;
+        mapLibreMap.setMinZoomPreference(MapLibreConstants.MINIMUM_ZOOM);
+      }
+    }
+  }
+
+  private void applyMinZoomForBounds(LatLngBounds bounds) {
+    if (mapView.getWidth() > 0 && mapView.getHeight() > 0) {
+      updateMinZoomForBounds(bounds);
+    } else {
+      mapView.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+        @Override
+        public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                   int oldLeft, int oldTop, int oldRight, int oldBottom) {
+          mapView.removeOnLayoutChangeListener(this);
+          updateMinZoomForBounds(bounds);
+        }
+      });
+    }
+  }
+
+  private void updateMinZoomForBounds(LatLngBounds bounds) {
+    CameraPosition cam = mapLibreMap.getCameraForLatLngBounds(bounds);
+    if (cam != null) {
+      boundsMinZoom = cam.zoom;
+      mapLibreMap.setMinZoomPreference(cam.zoom);
     }
   }
 
@@ -2141,7 +2174,11 @@ final class MapLibreMapController
 
   @Override
   public void setMinMaxZoomPreference(Float min, Float max) {
-    mapLibreMap.setMinZoomPreference(min != null ? min : MapLibreConstants.MINIMUM_ZOOM);
+    double effectiveMin = min != null ? min : MapLibreConstants.MINIMUM_ZOOM;
+    if (boundsMinZoom != null && boundsMinZoom > effectiveMin) {
+      effectiveMin = boundsMinZoom;
+    }
+    mapLibreMap.setMinZoomPreference(effectiveMin);
     mapLibreMap.setMaxZoomPreference(max != null ? max : MapLibreConstants.MAXIMUM_ZOOM);
   }
 
