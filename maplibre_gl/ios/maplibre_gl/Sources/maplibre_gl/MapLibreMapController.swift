@@ -38,19 +38,19 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
         args: Any?,
         frame: CGRect,
         registrar: FlutterPluginRegistrar
-    ) -> MLNMapView {
+    ) -> LayoutReportingMapView {
         if let args = args as? [String: Any],
             let styleString = args["styleString"] as? String
         {
             if Self.styleStringIsJSON(styleString) {
-                return MLNMapView(frame: frame, styleJSON: styleString)
+                return LayoutReportingMapView(frame: frame, styleJSON: styleString)
             }
 
             if let url = Self.styleStringAsURL(
                 styleString,
                 registrar: registrar
             ) {
-                return MLNMapView(frame: frame, styleURL: url)
+                return LayoutReportingMapView(frame: frame, styleURL: url)
             }
         }
 
@@ -62,7 +62,7 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
             """
         )
         // https://github.com/maplibre/maplibre-native/issues/709
-        return MLNMapView(frame: frame)
+        return LayoutReportingMapView(frame: frame)
     }
 
     init(
@@ -71,16 +71,23 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
         arguments args: Any?,
         registrar: FlutterPluginRegistrar
     ) {
-        mapView = Self.createMapView(
+        let createdMapView = Self.createMapView(
             args: args,
             frame: frame,
             registrar: registrar
         )
+        mapView = createdMapView
 
         mapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         self.registrar = registrar
 
         super.init()
+
+        // Flushes a camera update that arrived before the view had a size — see
+        // [pendingCameraWork].
+        createdMapView.onLayoutSubviews = { [weak self] in
+            self?.runPendingCameraWorkIfPossible()
+        }
 
         channel = FlutterMethodChannel(
             name: "plugins.flutter.io/maplibre_gl_\(viewId)",
@@ -315,22 +322,27 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
                 result(false)
                 return 
             }
-            guard let camera = Convert.parseCameraUpdate(cameraUpdate: cameraUpdate, mapView: mapView) else { 
-                result(false)
-                return 
+            // Same at-most-once reply as camera#animate. A deferred ease answers
+            // false now and still eases later — the alternative, holding the reply
+            // until the first layout, risks never answering at all.
+            var didReply = false
+            let reply = { (success: Bool) in
+                if didReply { return }
+                didReply = true
+                result(success)
             }
 
-            let completion = {
-                result(true)
+            let applied = applyCameraUpdate(cameraUpdate) { [weak self] camera in
+                guard let self else { return }
+                if let duration = arguments["duration"] as? Double, duration > 0 {
+                    let interval: TimeInterval = duration / 1000.0
+                    self.mapView.setCamera(camera, withDuration: interval, animationTimingFunction: CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut), completionHandler: { reply(true) })
+                } else {
+                    self.mapView.setCamera(camera, animated: true)
+                    reply(true)
+                }
             }
-
-            if let duration = arguments["duration"] as? Double, duration > 0 {
-                let interval: TimeInterval = duration / 1000.0
-                mapView.setCamera(camera, withDuration: interval, animationTimingFunction: CAMediaTimingFunction(name: CAMediaTimingFunctionName.easeInEaseOut), completionHandler: completion)
-            } else {
-                mapView.setCamera(camera, animated: true)
-                completion()
-            }
+            if !applied { reply(false) }
         case "map#queryCameraPosition":
             if let camera = getCamera() {
                 result(camera.toDict(mapView: mapView))
@@ -478,30 +490,40 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
             guard let arguments = methodCall.arguments as? [String: Any] else { return }
             guard let cameraUpdate = arguments["cameraUpdate"] as? [Any] else { return }
 
-            if let camera = Convert.parseCameraUpdate(cameraUpdate: cameraUpdate, mapView: mapView) {
-                mapView.setCamera(camera, animated: false)
+            applyCameraUpdate(cameraUpdate) { [weak self] camera in
+                self?.mapView.setCamera(camera, animated: false)
             }
             result(nil)
         case "camera#animate":
             guard let arguments = methodCall.arguments as? [String: Any] else { return }
             guard let cameraUpdate = arguments["cameraUpdate"] as? [Any] else { return }
-            guard let camera = Convert.parseCameraUpdate(cameraUpdate: cameraUpdate, mapView: mapView) else { return }
 
-
-            let completion = {
+            // Answered at most once, from whichever comes first: the animation
+            // completing, or the update being deferred below. The Dart side awaits
+            // animateCamera — `_onStyleLoaded` awaits it before adding placements —
+            // so a reply that never arrives stalls the map, and a second reply on a
+            // deferred-then-applied update would be an error.
+            var didReply = false
+            let reply = {
+                if didReply { return }
+                didReply = true
                 result(nil)
             }
 
-            if let duration = arguments["duration"] as? TimeInterval {
-                if let padding = Convert.parseLatLngBoundsPadding(cameraUpdate) {
-                    mapView.fly(to: camera, edgePadding: padding, withDuration: duration / 1000, completionHandler: completion)
+            let applied = applyCameraUpdate(cameraUpdate) { [weak self] camera in
+                guard let self else { return }
+                if let duration = arguments["duration"] as? TimeInterval {
+                    if let padding = Convert.parseLatLngBoundsPadding(cameraUpdate) {
+                        self.mapView.fly(to: camera, edgePadding: padding, withDuration: duration / 1000, completionHandler: reply)
+                    } else {
+                        self.mapView.fly(to: camera, withDuration: duration / 1000, completionHandler: reply)
+                    }
                 } else {
-                    mapView.fly(to: camera, withDuration: duration / 1000, completionHandler: completion)
+                    self.mapView.setCamera(camera, animated: true)
+                    reply()
                 }
-            } else {
-                mapView.setCamera(camera, animated: true)
-                completion()
             }
+            if !applied { reply() }
         case "symbolLayer#add":
             guard let arguments = methodCall.arguments as? [String: Any] else { return }
             guard let sourceId = arguments["sourceId"] as? String else { return }
@@ -958,8 +980,12 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
             let southwest = CLLocationCoordinate2D(latitude: south, longitude: west)
             let northeast = CLLocationCoordinate2D(latitude: north, longitude: east)
             let bounds = MLNCoordinateBounds(sw: southwest, ne: northeast)
-            mapView.setVisibleCoordinateBounds(bounds, edgePadding: UIEdgeInsets(top: padding,
-                left: padding, bottom: padding, right: padding) , animated: true)
+            // Fits the bounds to the view and applies the result as a camera, so it
+            // goes through the same zoom⇄altitude round trip — see [canUpdateCamera].
+            whenMapViewHasSize { [weak self] in
+                self?.mapView.setVisibleCoordinateBounds(bounds, edgePadding: UIEdgeInsets(top: padding,
+                    left: padding, bottom: padding, right: padding) , animated: true)
+            }
             result(nil)
 
         case "style#setFilter":
@@ -1186,6 +1212,107 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
         return trackCameraPosition ? mapView.camera : nil
     }
 
+    /// Whether a camera update may be handed to MapLibre right now.
+    ///
+    /// A camera update on a map view with no height terminates the process. iOS
+    /// converts a camera between zoom and altitude through `frame.size`
+    /// (`MLNGeometry.mm`): `MLNAltitudeForZoomLevel` multiplies by the height,
+    /// `MLNZoomLevelForAltitude` divides by it, so a zero height turns the round
+    /// trip into `0 / 0` and `MLNMapView` assigns the resulting NaN straight to
+    /// `CameraOptions.zoom` — it validates the center with
+    /// `CLLocationCoordinate2DIsValid` but never the zoom. `Transform::flyTo`
+    /// then unprojects NaN inside `constrainCameraAndZoomToBounds`, and
+    /// `mbgl::LatLng`'s constructor throws `std::domain_error`. Nothing catches
+    /// it: the process aborts with SIGABRT and no Dart-side error.
+    ///
+    /// A zero-height view is ordinary, not exotic. A platform view is created
+    /// before UIKit gives it a frame, and a style loaded from a local asset
+    /// parses in-process — so `onStyleLoaded` and the camera work it triggers can
+    /// easily win that race. The mirror case is teardown, where the view is on
+    /// its way out while a queued update arrives.
+    ///
+    /// Skipping such an update loses nothing: a camera position on a view with no
+    /// size is not observable, and whatever positions the map next lands on a
+    /// laid-out view.
+    private var canUpdateCamera: Bool {
+        let size = mapView.bounds.size
+        return size.width > 0 && size.height > 0
+    }
+
+    /// Whether MapLibre can turn this camera into a finite `CameraOptions`.
+    ///
+    /// Belt to [canUpdateCamera]'s braces: the same NaN reaches the same throw
+    /// however it was produced — degenerate bounds, or a caller passing a bad
+    /// coordinate. `altitude` must be > 0, not merely finite, because
+    /// `MLNZoomLevelForAltitude` maps an altitude of 0 to a zoom of -infinity.
+    private static func isUsable(camera: MLNMapCamera) -> Bool {
+        return CLLocationCoordinate2DIsValid(camera.centerCoordinate)
+            && camera.centerCoordinate.latitude.isFinite
+            && camera.centerCoordinate.longitude.isFinite
+            && camera.altitude.isFinite && camera.altitude > 0
+            && camera.pitch.isFinite
+            && camera.heading.isFinite
+    }
+
+    /// Camera work waiting for the map view to have a size.
+    ///
+    /// Deferred rather than dropped: a camera update arriving before the first
+    /// layout is usually the map's *initial positioning*, and nothing sends it
+    /// again — dropping it leaves the map wherever its `initialCameraPosition`
+    /// put it. Only the newest is kept; a later update supersedes an earlier one,
+    /// which is what a camera update means anyway.
+    ///
+    /// Held weakly-captured, so a map torn down before it is ever laid out simply
+    /// never runs it.
+    private var pendingCameraWork: (() -> Void)?
+
+    private func runPendingCameraWorkIfPossible() {
+        guard canUpdateCamera, let work = pendingCameraWork else { return }
+        pendingCameraWork = nil
+        work()
+    }
+
+    /// Runs `work` now, or at the first layout that gives the view a size.
+    ///
+    /// Returns whether it ran, so a caller that answers the Dart side from an
+    /// animation completion knows whether that completion is coming.
+    @discardableResult
+    private func whenMapViewHasSize(_ work: @escaping () -> Void) -> Bool {
+        guard canUpdateCamera else {
+            NSLog("MapLibreMapController - deferring camera work until the map view has a size")
+            pendingCameraWork = { [weak self] in _ = self?.whenMapViewHasSize(work) }
+            return false
+        }
+        work()
+        return true
+    }
+
+    /// Applies a camera update, now or once the view has a size.
+    ///
+    /// The update is parsed inside the deferred closure, not before it: parsing a
+    /// `newLatLngBounds` asks the map view to fit those bounds to itself, which
+    /// reads the very `frame.size` we are waiting for — on a zero-height view it
+    /// is what manufactures the altitude of 0 to begin with. So a deferred update
+    /// has to be re-parsed against the size it eventually gets.
+    @discardableResult
+    private func applyCameraUpdate(
+        _ cameraUpdate: [Any],
+        apply: @escaping (MLNMapCamera) -> Void
+    ) -> Bool {
+        return whenMapViewHasSize { [weak self] in
+            guard let self else { return }
+            guard let camera = Convert.parseCameraUpdate(
+                cameraUpdate: cameraUpdate,
+                mapView: self.mapView
+            ) else { return }
+            guard MapLibreMapController.isUsable(camera: camera) else {
+                NSLog("MapLibreMapController - ignoring camera update: camera is not finite")
+                return
+            }
+            apply(camera)
+        }
+    }
+
     private func setMapLanguage(language: String) {
         self.mapView.setMapLanguage(language)
     }
@@ -1368,10 +1495,18 @@ class MapLibreMapController: NSObject, FlutterPlatformView, MLNMapViewDelegate, 
         isMapReady = true
         updateMyLocationEnabled()
 
+        // Exactly the window [pendingCameraWork] exists for, and the narrowest one:
+        // a style loaded from a local asset finishes before UIKit has laid the view
+        // out, and `mapView.camera` derives its altitude from `frame.size` — so
+        // reapplying it would be the 0-altitude round trip. Read the camera inside
+        // the closure so a deferred tilt is applied to the laid-out camera.
         if let initialTilt = initialTilt {
-            let camera = mapView.camera
-            camera.pitch = initialTilt
-            mapView.setCamera(camera, animated: false)
+            whenMapViewHasSize { [weak self] in
+                guard let self else { return }
+                let camera = self.mapView.camera
+                camera.pitch = initialTilt
+                self.mapView.setCamera(camera, animated: false)
+            }
         }
 
         addedShapesByLayer.removeAll()
