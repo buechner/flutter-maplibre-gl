@@ -34,10 +34,14 @@ class MapExampleScaffold extends StatelessWidget {
   /// Whether to wrap controls in a Card. Defaults to false.
   final bool wrapInCard;
 
+  /// When true, the map fills the entire screen and controls are hidden.
+  /// Use this for doc-only examples embedded in iframes.
+  final bool mapOnly;
+
   const MapExampleScaffold({
     super.key,
     required this.map,
-    required this.controls,
+    this.controls = const <Widget>[],
     this.title,
     this.mapHeightRatio = ExampleConstants.mapHeightRatio,
     this.showAppBar = false,
@@ -45,8 +49,11 @@ class MapExampleScaffold extends StatelessWidget {
     this.controlsAlignment = WrapAlignment.start,
     this.controlsPadding,
     this.wrapInCard = false,
-  }) : assert(mapHeightRatio > 0.0 && mapHeightRatio <= 1.0,
-            'mapHeightRatio must be between 0.0 and 1.0');
+    this.mapOnly = false,
+  }) : assert(
+         mapHeightRatio > 0.0 && mapHeightRatio <= 1.0,
+         'mapHeightRatio must be between 0.0 and 1.0',
+       );
 
   @override
   Widget build(BuildContext context) {
@@ -54,37 +61,32 @@ class MapExampleScaffold extends StatelessWidget {
     final screenHeight = MediaQuery.of(context).size.height;
     final mapHeight = screenHeight * mapHeightRatio;
 
-    final controlsWidget = _buildControls(theme);
-
-    final body = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          height: mapHeight,
-          child: map,
-        ),
-        Expanded(
-          child: SingleChildScrollView(
-            child: controlsWidget,
-          ),
-        ),
-      ],
-    );
+    final body =
+        mapOnly
+            ? map
+            : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(height: mapHeight, child: map),
+                Expanded(
+                  child: SingleChildScrollView(child: _buildControls(theme)),
+                ),
+              ],
+            );
 
     return Scaffold(
-      appBar: showAppBar && title != null
-          ? AppBar(
-              title: Text(title!),
-              elevation: 0,
-            )
-          : null,
+      appBar:
+          showAppBar && title != null
+              ? AppBar(title: Text(title!), elevation: 0)
+              : null,
       body: body,
       floatingActionButton: floatingActionButton,
     );
   }
 
   Widget _buildControls(ThemeData theme) {
-    final padding = controlsPadding ??
+    final padding =
+        controlsPadding ??
         const EdgeInsets.all(ExampleConstants.paddingStandard);
 
     final wrappedControls = Wrap(
@@ -109,10 +111,7 @@ class MapExampleScaffold extends StatelessWidget {
       );
     }
 
-    return Padding(
-      padding: padding,
-      child: wrappedControls,
-    );
+    return Padding(padding: padding, child: wrappedControls);
   }
 }
 
@@ -153,25 +152,16 @@ class MapExampleScaffoldBuilder extends StatelessWidget {
 
     final body = Column(
       children: [
-        SizedBox(
-          height: mapHeight,
-          child: map,
-        ),
-        Expanded(
-          child: SingleChildScrollView(
-            child: controlsBuilder(context),
-          ),
-        ),
+        SizedBox(height: mapHeight, child: map),
+        Expanded(child: SingleChildScrollView(child: controlsBuilder(context))),
       ],
     );
 
     return Scaffold(
-      appBar: showAppBar && title != null
-          ? AppBar(
-              title: Text(title!),
-              elevation: 0,
-            )
-          : null,
+      appBar:
+          showAppBar && title != null
+              ? AppBar(title: Text(title!), elevation: 0)
+              : null,
       body: body,
       floatingActionButton: floatingActionButton,
     );

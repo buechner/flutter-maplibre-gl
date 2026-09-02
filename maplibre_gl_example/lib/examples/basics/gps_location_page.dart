@@ -1,21 +1,42 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:location/location.dart';
+import 'package:flutter/services.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../page.dart';
 import '../../shared/shared.dart';
 
+/// Snapshot of the user's location as reported by the map's location engine.
+/// The map (via [MapLibreMap.onUserLocationUpdated]) is the source of truth
+/// here, so this is a plain value holder rather than a location plugin type.
+class _LocationSnapshot {
+  const _LocationSnapshot({
+    required this.latitude,
+    required this.longitude,
+    this.altitude,
+    this.accuracy,
+    this.speed,
+  });
+
+  final double latitude;
+  final double longitude;
+  final double? altitude;
+  final double? accuracy;
+  final double? speed;
+}
+
 /// Example demonstrating GPS location tracking
 class GpsLocationPage extends ExamplePage {
   const GpsLocationPage({super.key})
-      : super(
-          const Icon(Icons.gps_fixed),
-          'GPS Location',
-          needsLocationPermission: false,
-          category: ExampleCategory.basics,
-        );
+    : super(
+        const Icon(Icons.gps_fixed),
+        'GPS Location',
+        needsLocationPermission: false,
+        category: ExampleCategory.basics,
+      );
 
   @override
   Widget build(BuildContext context) => const _GpsLocationBody();
@@ -30,11 +51,16 @@ class _GpsLocationBody extends StatefulWidget {
 
 class _GpsLocationBodyState extends State<_GpsLocationBody> {
   MapLibreMapController? _controller;
-  LocationData? _currentLocation;
+  _LocationSnapshot? _currentLocation;
   bool _useHighAccuracy = false;
-  PermissionStatus? _permissionStatus;
+  bool _hasPermission = false;
   MyLocationTrackingMode _trackingMode = MyLocationTrackingMode.none;
-  final Location _location = Location();
+
+  /// Pitch last requested through [MapLibreMapController.setTrackingCameraOptions].
+  double _trackingTilt = 0;
+
+  /// What the last tracking-tilt attempt reported, shown under the slider.
+  String? _tiltStatus;
 
   @override
   void initState() {
@@ -43,9 +69,18 @@ class _GpsLocationBodyState extends State<_GpsLocationBody> {
   }
 
   Future<void> _checkPermission() async {
-    final status = await _location.hasPermission();
+    if (kIsWeb) {
+      // On web the browser handles the permission prompt via the
+      // GeolocateControl when it first tries to access location, so we
+      // enable location directly here.
+      if (mounted) {
+        setState(() => _hasPermission = true);
+      }
+      return;
+    }
+    final status = await Permission.locationWhenInUse.status;
     if (mounted) {
-      setState(() => _permissionStatus = status);
+      setState(() => _hasPermission = status.isGranted);
     }
   }
 
@@ -53,19 +88,55 @@ class _GpsLocationBodyState extends State<_GpsLocationBody> {
     setState(() => _controller = controller);
   }
 
-  Future<void> _requestPermission() async {
-    final status = await _location.requestPermission();
+  void _onCameraTrackingChanged(MyLocationTrackingMode mode) {
     if (mounted) {
-      setState(() => _permissionStatus = status);
+      setState(() => _trackingMode = mode);
     }
   }
+
+  void _onUserLocationUpdated(UserLocation location) {
+    if (mounted) {
+      setState(() {
+        _currentLocation = _LocationSnapshot(
+          latitude: location.position.latitude,
+          longitude: location.position.longitude,
+          altitude: location.altitude,
+          accuracy: location.horizontalAccuracy,
+          speed: location.speed,
+        );
+      });
+    }
+  }
+
+  Future<void> _requestPermission() async {
+    final status = await Permission.locationWhenInUse.request();
+    if (mounted) {
+      setState(() => _hasPermission = status.isGranted);
+    }
+  }
+
+  static const _highAccuracyProperties =
+      kIsWeb
+          ? LocationEnginePlatforms.web(enableHighAccuracy: true)
+          : LocationEnginePlatforms.android(
+            enableHighAccuracy: true,
+            interval: 1000,
+            displacement: 1,
+          );
 
   Future<void> _toggleAccuracy() async {
     setState(() => _useHighAccuracy = !_useHighAccuracy);
   }
 
   Future<void> _cycleTrackingMode() async {
-    const modes = MyLocationTrackingMode.values;
+    // On web, only None and Tracking are meaningful — compass/GPS
+    // distinctions don't exist in the browser's GeolocateControl.
+    const webTrackingModes = <MyLocationTrackingMode>[
+      MyLocationTrackingMode.none,
+      MyLocationTrackingMode.tracking,
+    ];
+
+    const modes = kIsWeb ? webTrackingModes : MyLocationTrackingMode.values;
     final currentIndex = modes.indexOf(_trackingMode);
     final nextMode = modes[(currentIndex + 1) % modes.length];
 
@@ -75,12 +146,44 @@ class _GpsLocationBodyState extends State<_GpsLocationBody> {
     }
   }
 
+  /// Tracking camera options need a location component in the underlying SDK,
+  /// which Android and iOS have. maplibre-gl-js has none, so web is out.
+  static bool get _supportsTrackingCamera => !kIsWeb;
+
+  /// Pitches the camera without giving up tracking, the navigation-style view.
+  ///
+  /// A plain `animateCamera(CameraUpdate.tiltTo(...))` would end tracking here,
+  /// so the map would stop following the user.
+  Future<void> _setTrackingTilt(double tilt) async {
+    final controller = _controller;
+    if (controller == null) return;
+    setState(() => _trackingTilt = tilt);
+    try {
+      final applied = await controller.setTrackingCameraOptions(
+        tilt: tilt,
+        duration: const Duration(milliseconds: 250),
+      );
+      if (mounted) {
+        setState(
+          () =>
+              _tiltStatus =
+                  applied
+                      ? 'Applied, still tracking'
+                      : 'Cancelled by the platform',
+        );
+      }
+    } on PlatformException catch (e) {
+      // TRACKING_NOT_ACTIVE when no tracking mode is engaged yet.
+      if (mounted) setState(() => _tiltStatus = e.message);
+    }
+  }
+
   String _getTrackingModeLabel() {
     switch (_trackingMode) {
       case MyLocationTrackingMode.none:
         return 'None';
       case MyLocationTrackingMode.tracking:
-        return 'Tracking';
+        return kIsWeb ? 'Active tracking' : 'Tracking';
       case MyLocationTrackingMode.trackingCompass:
         return 'Tracking + Compass';
       case MyLocationTrackingMode.trackingGps:
@@ -91,9 +194,11 @@ class _GpsLocationBodyState extends State<_GpsLocationBody> {
   String _getTrackingModeDescription() {
     switch (_trackingMode) {
       case MyLocationTrackingMode.none:
-        return 'No tracking active';
+        return kIsWeb
+            ? 'Location dot shown, camera does not follow'
+            : 'No tracking active';
       case MyLocationTrackingMode.tracking:
-        return 'Follow user location';
+        return kIsWeb ? 'Camera follows user location' : 'Follow user location';
       case MyLocationTrackingMode.trackingCompass:
         return 'Follow location and rotation';
       case MyLocationTrackingMode.trackingGps:
@@ -109,13 +214,15 @@ class _GpsLocationBodyState extends State<_GpsLocationBody> {
   @override
   Widget build(BuildContext context) {
     final hasController = _controller != null;
-    final hasPermission = _permissionStatus == PermissionStatus.granted;
+    final hasPermission = _hasPermission;
     final hasLocation = _currentLocation != null;
 
     return MapExampleScaffold(
       map: MapLibreMap(
         styleString: ExampleConstants.demoMapStyle,
         onMapCreated: _onMapCreated,
+        onUserLocationUpdated: _onUserLocationUpdated,
+        onCameraTrackingChanged: _onCameraTrackingChanged,
         initialCameraPosition: const CameraPosition(
           target: LatLng(37.3, -121.8),
           zoom: 7,
@@ -123,22 +230,18 @@ class _GpsLocationBodyState extends State<_GpsLocationBody> {
         trackCameraPosition: true,
         myLocationEnabled: hasPermission,
         myLocationTrackingMode: _trackingMode,
-        locationEnginePlatforms: _useHighAccuracy
-            ? const LocationEnginePlatforms(
-                androidPlatform: LocationEngineAndroidProperties(
-                  interval: 1000,
-                  displacement: 1,
-                  priority: LocationPriority.highAccuracy,
-                ),
-              )
-            : LocationEnginePlatforms.defaultPlatform,
+        locationEnginePlatforms:
+            _useHighAccuracy
+                ? _highAccuracyProperties
+                : LocationEnginePlatforms.defaultPlatform,
       ),
       controls: [
         InfoCard(
           title: 'GPS Location Tracking',
-          subtitle: hasPermission
-              ? 'Track your device location on the map'
-              : 'Location permission required',
+          subtitle:
+              hasPermission
+                  ? 'Track your device location on the map'
+                  : 'Location permission required',
           icon: hasPermission ? Icons.gps_fixed : Icons.gps_off,
           color: hasPermission ? null : Theme.of(context).colorScheme.error,
         ),
@@ -174,14 +277,49 @@ class _GpsLocationBodyState extends State<_GpsLocationBody> {
           ),
           const SizedBox(height: 8),
           ControlGroup(
+            title: 'Tracking Camera Tilt',
+            vertical: true,
+            children: [
+              ListTile(
+                title: Text('Tilt ${_trackingTilt.round()}°'),
+                subtitle: Text(
+                  _tiltStatus ??
+                      (_supportsTrackingCamera
+                          ? 'Pitch the camera and keep following the user. '
+                              'Needs a tracking mode other than None.'
+                          : 'Not available on web: maplibre-gl-js has no '
+                              'location component to pitch a tracking camera.'),
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              Slider(
+                value: _trackingTilt,
+                max: 60,
+                divisions: 12,
+                label: '${_trackingTilt.round()}°',
+                onChanged:
+                    hasController && _supportsTrackingCamera
+                        ? (value) => setState(() => _trackingTilt = value)
+                        : null,
+                onChangeEnd:
+                    hasController && _supportsTrackingCamera
+                        ? _setTrackingTilt
+                        : null,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ControlGroup(
             title: 'Settings',
             vertical: true,
             children: [
               SwitchListTile(
                 title: const Text('High Accuracy Mode'),
-                subtitle: Text(_useHighAccuracy
-                    ? 'GPS with high accuracy (Android only)'
-                    : 'Default location settings'),
+                subtitle: Text(
+                  _useHighAccuracy
+                      ? 'GPS with high accuracy'
+                      : 'Default location settings',
+                ),
                 value: _useHighAccuracy,
                 onChanged: (_) => _toggleAccuracy(),
                 contentPadding: EdgeInsets.zero,

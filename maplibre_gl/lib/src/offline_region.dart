@@ -66,11 +66,47 @@ class OfflineRegion {
     return OfflineRegion(
       id: json['id'],
       definition: OfflineRegionDefinition.fromMap(json['definition']),
-      metadata: json['metadata'],
+      // Offline databases created by external tools (e.g. maplibre-native's
+      // offline.cpp) may have no metadata, in which case the native layer
+      // returns null. Default to an empty map instead of throwing.
+      metadata: (json['metadata'] as Map?)?.cast<String, dynamic>() ?? const {},
     );
   }
 
   @override
   String toString() =>
       "OfflineRegion, id = $id, definition = $definition, metadata = $metadata";
+}
+
+/// Status of an offline region's download.
+class OfflineRegionStatus {
+  const OfflineRegionStatus({
+    required this.completedResourceCount,
+    required this.requiredResourceCount,
+    required this.completedResourceSize,
+    required this.isComplete,
+    required this.downloadProgress,
+  });
+
+  final int completedResourceCount;
+  final int requiredResourceCount;
+  final int completedResourceSize;
+  final bool isComplete;
+  final double downloadProgress;
+
+  factory OfflineRegionStatus.fromMap(Map<String, dynamic> json) {
+    return OfflineRegionStatus(
+      completedResourceCount: json['completedResourceCount'] as int,
+      requiredResourceCount: json['requiredResourceCount'] as int,
+      completedResourceSize: json['completedResourceSize'] as int,
+      isComplete: json['isComplete'] as bool,
+      downloadProgress: (json['downloadProgress'] as num).toDouble(),
+    );
+  }
+
+  @override
+  String toString() =>
+      "OfflineRegionStatus, progress = $downloadProgress, "
+      "complete = $isComplete, resources = $completedResourceCount/$requiredResourceCount, "
+      "bytes = $completedResourceSize";
 }

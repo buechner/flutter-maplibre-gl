@@ -4,17 +4,15 @@ class SymbolLayerJsImpl {
   static toJs(SymbolLayer symbolLayer) => toDict(symbolLayer).jsify();
 
   static toDict(SymbolLayer symbolLayer) {
-    final dict = <String, dynamic>{
-      'id': symbolLayer.id,
-      'type': 'symbol',
-    };
+    final dict = <String, dynamic>{'id': symbolLayer.id, 'type': 'symbol'};
     if (symbolLayer.metadata != null) {
       dict['metadata'] = symbolLayer.metadata;
     }
     if (symbolLayer.source != null) {
-      dict['source'] = symbolLayer.source is String
-          ? symbolLayer.source
-          : symbolLayer.source.dict;
+      dict['source'] =
+          symbolLayer.source is String
+              ? symbolLayer.source
+              : symbolLayer.source.dict;
     }
     if (symbolLayer.sourceLayer != null) {
       dict['source-layer'] = symbolLayer.sourceLayer;

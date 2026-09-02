@@ -1,19 +1,20 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
-import '../../page.dart';
-import '../../shared/shared.dart';
+import 'package:maplibre_gl_example/page.dart';
+import 'package:maplibre_gl_example/shared/constants.dart';
+import 'package:maplibre_gl_example/shared/widgets/example_button.dart';
 
 const _nullIsland = CameraPosition(target: LatLng(0, 0), zoom: 4.0);
 
 /// Example demonstrating a translucent map with content underneath
 class TranslucentFullMapPage extends ExamplePage {
   const TranslucentFullMapPage({super.key})
-      : super(
-          const Icon(Icons.layers),
-          'Translucent map',
-          category: ExampleCategory.advanced,
-        );
+    : super(
+        const Icon(Icons.layers),
+        'Translucent map',
+        category: ExampleCategory.advanced,
+      );
 
   @override
   Widget build(BuildContext context) => const _TranslucentMapBody();
@@ -89,11 +90,12 @@ class _TranslucentMapBodyState extends State<_TranslucentMapBody> {
       floatingActionButton: ExampleButton(
         label: _canReset ? 'Reset camera' : 'Go to Null Island',
         icon: _canReset ? Icons.refresh : Icons.flight_takeoff,
-        onPressed: _canInteractWithMap
-            ? _canReset
-                ? _resetCamera
-                : _moveCameraToNullIsland
-            : null,
+        onPressed:
+            _canInteractWithMap
+                ? _canReset
+                    ? _resetCamera
+                    : _moveCameraToNullIsland
+                : null,
         style: ExampleButtonStyle.tonal,
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,

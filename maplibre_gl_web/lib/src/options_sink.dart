@@ -38,4 +38,20 @@ abstract class MapLibreMapOptionsSink {
   void setAttributionButtonAlignment(AttributionButtonPosition position);
 
   void setAttributionButtonMargins(int x, int y);
+
+  void setScaleControlEnabled(bool enabled);
+
+  void setScaleControlPosition(ScaleControlPosition position);
+
+  void setScaleControlUnit(ScaleControlUnit unit);
+
+  void setFeatureTapsTriggersMapClick(bool triggers);
+
+  void setLocationSource(String token);
+
+  void setLocationEngineProperties({
+    required bool enableHighAccuracy,
+    required int maximumAge,
+    required int timeout,
+  });
 }

@@ -7,11 +7,11 @@ import '../../shared/shared.dart';
 /// Example demonstrating dynamic annotation property updates
 class AnnotationPropertiesExample extends ExamplePage {
   const AnnotationPropertiesExample({super.key})
-      : super(
-          const Icon(Icons.tune),
-          'Annotation Properties',
-          category: ExampleCategory.annotations,
-        );
+    : super(
+        const Icon(Icons.tune),
+        'Annotation Properties',
+        category: ExampleCategory.annotations,
+      );
 
   @override
   Widget build(BuildContext context) => const _AnnotationPropertiesBody();
@@ -112,9 +112,7 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
       _fill = await _controller!.addFill(
         FillOptions(
           geometry: [
-            _generatePolygon(
-              LatLng(center.latitude - 0.05, center.longitude),
-            )
+            _generatePolygon(LatLng(center.latitude - 0.05, center.longitude)),
           ],
           fillColor: _fillColor,
           fillOpacity: _fillOpacity,
@@ -137,9 +135,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
       setState(() {});
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error adding annotations: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error adding annotations: $e')));
       }
     }
   }
@@ -159,10 +157,12 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
     final points = <LatLng>[];
     const step = 0.02;
     for (var i = 0; i < 5; i++) {
-      points.add(LatLng(
-        center.latitude + (i * step * 0.3),
-        center.longitude - (step * 2) + (i * step),
-      ));
+      points.add(
+        LatLng(
+          center.latitude + (i * step * 0.3),
+          center.longitude - (step * 2) + (i * step),
+        ),
+      );
     }
     return points;
   }
@@ -182,9 +182,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating symbol: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating symbol: $e')));
       }
     }
   }
@@ -204,9 +204,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating circle: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating circle: $e')));
       }
     }
   }
@@ -225,9 +225,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating fill: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating fill: $e')));
       }
     }
   }
@@ -247,9 +247,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating line: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error updating line: $e')));
       }
     }
   }
@@ -267,64 +267,67 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
         ),
         trackCameraPosition: true,
       ),
-      controls: _controller == null
-          ? []
-          : [
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Annotation Type',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: Theme.of(context).colorScheme.primary,
+      controls:
+          _controller == null
+              ? []
+              : [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Annotation Type',
+                          style: Theme.of(
+                            context,
+                          ).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        ExampleSegmentedButton<PropertyAnnotationType>(
+                          segments: const [
+                            ExampleSegment(
+                              value: PropertyAnnotationType.symbol,
+                              label: 'Symbol',
+                              icon: Icons.place,
                             ),
-                      ),
-                      const SizedBox(height: 8),
-                      ExampleSegmentedButton<PropertyAnnotationType>(
-                        segments: const [
-                          ExampleSegment(
-                            value: PropertyAnnotationType.symbol,
-                            label: 'Symbol',
-                            icon: Icons.place,
-                          ),
-                          ExampleSegment(
-                            value: PropertyAnnotationType.circle,
-                            label: 'Circle',
-                            icon: Icons.circle_outlined,
-                          ),
-                          ExampleSegment(
-                            value: PropertyAnnotationType.fill,
-                            label: 'Fill',
-                            icon: Icons.square,
-                          ),
-                          ExampleSegment(
-                            value: PropertyAnnotationType.line,
-                            label: 'Line',
-                            icon: Icons.timeline,
-                          ),
-                        ],
-                        selected: _currentType,
-                        onSelectionChanged: (type) {
-                          setState(() => _currentType = type);
-                        },
-                      ),
-                    ],
+                            ExampleSegment(
+                              value: PropertyAnnotationType.circle,
+                              label: 'Circle',
+                              icon: Icons.circle_outlined,
+                            ),
+                            ExampleSegment(
+                              value: PropertyAnnotationType.fill,
+                              label: 'Fill',
+                              icon: Icons.square,
+                            ),
+                            ExampleSegment(
+                              value: PropertyAnnotationType.line,
+                              label: 'Line',
+                              icon: Icons.timeline,
+                            ),
+                          ],
+                          selected: _currentType,
+                          onSelectionChanged: (type) {
+                            setState(() => _currentType = type);
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              if (_currentType == PropertyAnnotationType.symbol)
-                ..._buildSymbolControls(),
-              if (_currentType == PropertyAnnotationType.circle)
-                ..._buildCircleControls(),
-              if (_currentType == PropertyAnnotationType.fill)
-                ..._buildFillControls(),
-              if (_currentType == PropertyAnnotationType.line)
-                ..._buildLineControls(),
-            ],
+                if (_currentType == PropertyAnnotationType.symbol)
+                  ..._buildSymbolControls(),
+                if (_currentType == PropertyAnnotationType.circle)
+                  ..._buildCircleControls(),
+                if (_currentType == PropertyAnnotationType.fill)
+                  ..._buildFillControls(),
+                if (_currentType == PropertyAnnotationType.line)
+                  ..._buildLineControls(),
+              ],
     );
   }
 
@@ -367,9 +370,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
           ListTile(
             title: const Text('Text Content'),
             subtitle: TextField(
-              controller: TextEditingController(text: _textField)
-                ..selection =
-                    TextSelection.collapsed(offset: _textField.length),
+              controller: TextEditingController(
+                text: _textField,
+              )..selection = TextSelection.collapsed(offset: _textField.length),
               onChanged: (value) async {
                 setState(() => _textField = value);
                 await _updateSymbolProperties();
@@ -434,8 +437,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
             ),
           ),
           ListTile(
-            title:
-                Text('Opacity: ${(_circleOpacity * 100).toStringAsFixed(0)}%'),
+            title: Text(
+              'Opacity: ${(_circleOpacity * 100).toStringAsFixed(0)}%',
+            ),
             subtitle: Slider(
               value: _circleOpacity,
               min: 0.0,
@@ -448,8 +452,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
             ),
           ),
           ListTile(
-            title:
-                Text('Stroke Width: ${_circleStrokeWidth.toStringAsFixed(1)}'),
+            title: Text(
+              'Stroke Width: ${_circleStrokeWidth.toStringAsFixed(1)}',
+            ),
             subtitle: Slider(
               value: _circleStrokeWidth,
               min: 0.0,
@@ -467,8 +472,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: Color(int.parse(_circleColor.substring(1), radix: 16) +
-                    0xFF000000),
+                color: Color(
+                  int.parse(_circleColor.substring(1), radix: 16) + 0xFF000000,
+                ),
                 border: Border.all(color: Colors.grey),
                 borderRadius: BorderRadius.circular(4),
               ),
@@ -522,7 +528,8 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
               height: 48,
               decoration: BoxDecoration(
                 color: Color(
-                    int.parse(_fillColor.substring(1), radix: 16) + 0xFF000000),
+                  int.parse(_fillColor.substring(1), radix: 16) + 0xFF000000,
+                ),
                 border: Border.all(color: Colors.grey),
                 borderRadius: BorderRadius.circular(4),
               ),
@@ -536,8 +543,9 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
               height: 48,
               decoration: BoxDecoration(
                 color: Color(
-                    int.parse(_fillOutlineColor.substring(1), radix: 16) +
-                        0xFF000000),
+                  int.parse(_fillOutlineColor.substring(1), radix: 16) +
+                      0xFF000000,
+                ),
                 border: Border.all(color: Colors.grey),
                 borderRadius: BorderRadius.circular(4),
               ),
@@ -616,7 +624,8 @@ class _AnnotationPropertiesBodyState extends State<_AnnotationPropertiesBody> {
               height: 48,
               decoration: BoxDecoration(
                 color: Color(
-                    int.parse(_lineColor.substring(1), radix: 16) + 0xFF000000),
+                  int.parse(_lineColor.substring(1), radix: 16) + 0xFF000000,
+                ),
                 border: Border.all(color: Colors.grey),
                 borderRadius: BorderRadius.circular(4),
               ),
